@@ -12,6 +12,12 @@
       <span class="app-title">青柠简历</span>
       <div class="header-actions">
         <span id="save-state" role="status">自动保存</span>
+        <div class="history-actions" role="group" aria-label="修改历史">
+          <button id="undo" type="button" title="撤销（Ctrl/Cmd + Z）" disabled>撤销</button>
+          <button id="redo" type="button" title="重做（Ctrl/Cmd + Shift + Z）" disabled>
+            重做
+          </button>
+        </div>
         <details class="settings">
           <summary>更多</summary>
           <div class="settings-panel">
@@ -61,6 +67,7 @@
     <script src="defaults.js" defer></script>
     <script src="data.js" defer></script>
     <script src="dom.js" defer></script>
+    <script src="history.js" defer></script>
     <script src="preview.js" defer></script>
     <script src="split-pane.js" defer></script>
     <script src="app.js" defer></script>

@@ -11,6 +11,8 @@
     title: $('#form-title'),
     actions: $('#section-actions'),
     saved: $('#save-state'),
+    undo: $('#undo'),
+    redo: $('#redo'),
     toast: $('#toast'),
     fontSize: $('#font-size'),
     file: $('#file'),
@@ -28,6 +30,8 @@
     id === 'basic' ? '基本信息' : sectionName(data.sections.find((section) => section.id === id));
   let data = copyDefaults();
   let active = 'basic';
+  let history = window.ResumeHistory.create(data);
+  let unsaved = false;
   let toastTimer;
   let previewFrame = 0;
   let importRequest = 0;
@@ -51,6 +55,7 @@
     toastTimer = setTimeout(() => refs.toast.classList.remove('visible'), 3500);
   }
   function showSavedTime(value) {
+    refs.saved.dataset.state = 'saved';
     const date = typeof value === 'string' ? new Date(value) : new Date(NaN);
     if (!Number.isFinite(date.getTime())) {
       refs.saved.textContent = '已恢复（保存时间未知）';
@@ -65,16 +70,82 @@
     refs.saved.replaceChildren(document.createTextNode('已保存 '), time);
     refs.saved.title = '最后保存时间（北京时间）';
   }
-  function save() {
+  function updateHistoryControls() {
+    const pending = !history.matches(data);
+    refs.undo.disabled = !history.canUndo && !pending;
+    refs.redo.disabled = !history.canRedo || pending;
+  }
+  function persist() {
     const savedAt = new Date().toISOString();
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, savedAt }));
-      data.savedAt = savedAt;
-      showSavedTime(savedAt);
-    } catch {
-      refs.saved.textContent = '无法自动保存，请备份';
-      toast('本地存储不可用，请备份数据');
+    let trimmed = false;
+    // Save the current resume and its history in one atomic localStorage write.
+    for (;;) {
+      try {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ ...data, savedAt, history: history.serialize() }),
+        );
+        data.savedAt = savedAt;
+        unsaved = false;
+        showSavedTime(savedAt);
+        if (trimmed) toast('存储空间有限，已保留较近的撤销记录');
+        updateHistoryControls();
+        return true;
+      } catch (error) {
+        const quota = ['QuotaExceededError', 'NS_ERROR_DOM_QUOTA_REACHED'].includes(error.name);
+        if (quota && history.pruneOldest()) {
+          trimmed = true;
+          continue;
+        }
+        unsaved = true;
+        refs.saved.dataset.state = 'error';
+        refs.saved.textContent = '无法自动保存，请备份';
+        toast('本地存储不可用，请备份数据');
+        updateHistoryControls();
+        return false;
+      }
     }
+  }
+  function save() {
+    history.record(data);
+    return persist();
+  }
+  function commitPending() {
+    if (unsaved || !history.matches(data)) save();
+  }
+  function inputChanged() {
+    const pending = !history.matches(data);
+    if (pending || unsaved) {
+      if (refs.saved.dataset.state !== 'dirty') {
+        refs.saved.dataset.state = 'dirty';
+        refs.saved.textContent = '未保存';
+        refs.saved.title = '输入框失去焦点后自动保存';
+      }
+    } else if (data.savedAt) showSavedTime(data.savedAt);
+    else {
+      refs.saved.dataset.state = 'saved';
+      refs.saved.textContent = '自动保存';
+    }
+    updateHistoryControls();
+    schedulePreview();
+  }
+  function travelHistory(direction) {
+    commitPending();
+    const oldIds = new Set(data.sections.map((section) => section.id));
+    const next = history[direction]();
+    if (!next) return;
+    const savedAt = data.savedAt;
+    data = next;
+    if (savedAt) data.savedAt = savedAt;
+    const restored = data.sections.find((section) => !oldIds.has(section.id));
+    if (restored) active = restored.id;
+    else if (active !== 'basic' && !data.sections.some((section) => section.id === active))
+      active = 'basic';
+    refs.fontSize.value = String(data.fontSize);
+    renderTabs();
+    renderForm();
+    persist();
+    schedulePreview();
   }
   function schedulePreview() {
     if (previewFrame) return;
@@ -89,11 +160,11 @@
     preview.render(data, options);
   }
   function changed() {
-    // Persist immediately, even if the user closes the tab before the next frame.
     save();
     schedulePreview();
   }
   function replaceResume(next) {
+    commitPending();
     data = normalizeResume(next);
     active = 'basic';
     refs.fontSize.value = String(data.fontSize);
@@ -129,8 +200,9 @@
     if (key === 'email') input.inputMode = 'email';
     input.addEventListener('input', () => {
       onInput(input.value);
-      changed();
+      inputChanged();
     });
+    input.addEventListener('blur', commitPending);
     wrap.append(input);
     return wrap;
   }
@@ -356,7 +428,7 @@
     refs.form.querySelector('input[data-custom-title]')?.focus();
   }
   function deleteCustomSection(section) {
-    if (!confirm(`删除“${sectionName(section)}”及其中的全部内容？此操作不可撤销，建议先备份。`))
+    if (!confirm(`删除“${sectionName(section)}”及其中的全部内容？删除后可撤销，建议先备份。`))
       return;
     const index = data.sections.indexOf(section);
     if (index < 0 || section.kind !== 'custom') return;
@@ -459,6 +531,7 @@
     }
   }
   function preparePrint() {
+    commitPending();
     document.title = `${data.name || '我的'}-简历`;
     flushPreview({ printing: true });
   }
@@ -489,13 +562,55 @@
       finishPrint();
     }
   });
+  refs.undo.addEventListener('click', () => travelHistory('undo'));
+  refs.redo.addEventListener('click', () => travelHistory('redo'));
+  document.addEventListener('keydown', (event) => {
+    const editing =
+      event.target instanceof Element &&
+      event.target.closest(
+        'textarea, input:not([type="checkbox"]):not([type="file"]), [contenteditable]:not([contenteditable="false"])',
+      );
+    if (editing || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key !== 'z' && key !== 'y') return;
+    event.preventDefault();
+    travelHistory(key === 'y' || event.shiftKey ? 'redo' : 'undo');
+  });
+  window.addEventListener('pagehide', commitPending);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') commitPending();
+  });
+  refs.settings.addEventListener('focusout', (event) => {
+    if (event.relatedTarget) {
+      if (!refs.settings.contains(event.relatedTarget)) refs.settings.open = false;
+      return;
+    }
+    // Native pointer focus moves can briefly leave activeElement on <body>.
+    // Wait until the focus transition finishes before closing the menu.
+    requestAnimationFrame(() => {
+      if (!refs.settings.contains(document.activeElement)) refs.settings.open = false;
+    });
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!refs.settings.contains(event.target)) refs.settings.open = false;
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && refs.settings.open) {
+      event.preventDefault();
+      refs.settings.open = false;
+      refs.settings.querySelector('summary').focus();
+    }
+  });
   window.addEventListener('beforeprint', preparePrint);
   window.addEventListener('afterprint', finishPrint);
 
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      data = normalizeResume(JSON.parse(saved));
+      const stored = JSON.parse(saved);
+      data = normalizeResume(stored);
+      history = window.ResumeHistory.create(data, stored.history);
+      if (history.discardedHistory) toast('撤销历史不可用，已恢复当前简历');
       showSavedTime(data.savedAt);
     }
   } catch {
@@ -503,6 +618,7 @@
     toast('未能读取本地草稿，已显示模拟简历；可恢复备份');
   }
   refs.fontSize.value = String(data.fontSize);
+  updateHistoryControls();
   renderTabs();
   renderForm();
   flushPreview();
