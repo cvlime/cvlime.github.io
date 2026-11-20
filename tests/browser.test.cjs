@@ -99,7 +99,7 @@ test('legacy drafts migrate, save on blur, retain timestamp and custom content',
   assert.equal(state.name, '草稿即时保存');
   assert.equal(state.schemaVersion, 3);
   const status = await page.locator('#save-state').textContent();
-  assert.match(status, /已保存 \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+  assert.match(status, /最近保存：\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
   await page.reload();
   assert.equal(await page.getByLabel('姓名', { exact: true }).inputValue(), '草稿即时保存');
   assert.equal(await page.locator('#save-state').textContent(), status);
@@ -368,14 +368,16 @@ test('blur saves text and advances the visible latest-save timestamp', async (t)
   await page.clock.setFixedTime(new Date('2026-11-20T08:00:00Z'));
   await name.fill('第一次保存');
   assert.equal(await page.evaluate(() => localStorage.getItem('resume-studio-v1')), null);
-  assert.equal(await page.locator('#save-state').textContent(), '未保存');
+  assert.equal(await page.locator('#save-state').textContent(), '自动保存');
   await page.waitForFunction(
     () => document.querySelector('.resume-header h1').textContent === '第一次保存',
   );
   await name.blur();
-  assert.equal(await page.locator('#save-state').textContent(), '已保存 2026-11-20 16:00:00');
+  assert.equal(await page.locator('#save-state').textContent(), '最近保存：2026-11-20 16:00:00');
   await page.clock.setFixedTime(new Date('2026-11-20T08:01:02Z'));
   await name.fill('第二次保存');
+  assert.equal(await page.locator('#save-state').textContent(), '最近保存：2026-11-20 16:00:00');
+  assert((await page.locator('#save-state').getAttribute('title')).includes('失去焦点后自动保存'));
   assert.equal(
     await page.evaluate(() => JSON.parse(localStorage.getItem('resume-studio-v1')).name),
     '第一次保存',
@@ -384,10 +386,10 @@ test('blur saves text and advances the visible latest-save timestamp', async (t)
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('resume-studio-v1')));
   assert.equal(saved.name, '第二次保存');
   assert.equal(saved.savedAt, '2026-11-20T08:01:02.000Z');
-  assert.equal(await page.locator('#save-state').textContent(), '已保存 2026-11-20 16:01:02');
+  assert.equal(await page.locator('#save-state').textContent(), '最近保存：2026-11-20 16:01:02');
   await page.reload();
   assert.equal(await name.inputValue(), '第二次保存');
-  assert.equal(await page.locator('#save-state').textContent(), '已保存 2026-11-20 16:01:02');
+  assert.equal(await page.locator('#save-state').textContent(), '最近保存：2026-11-20 16:01:02');
 });
 
 test('browser-native text undo remains available without application history', async (t) => {

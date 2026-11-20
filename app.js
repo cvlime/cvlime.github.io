@@ -65,7 +65,7 @@
     const time = el('time');
     time.dateTime = date.toISOString();
     time.textContent = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
-    refs.saved.replaceChildren(document.createTextNode('已保存 '), time);
+    refs.saved.replaceChildren(document.createTextNode('最近保存：'), time);
     refs.saved.title = '最后保存时间（北京时间）';
   }
   function contentSignature(value) {
@@ -94,10 +94,13 @@
   function inputChanged() {
     const pending = contentSignature(data) !== savedContent;
     if (pending || unsaved) {
-      if (refs.saved.dataset.state !== 'dirty') {
+      if (unsaved && refs.saved.dataset.state === 'error') {
+        refs.saved.title = '上次保存失败，输入框失去焦点后重试；也可备份数据';
+      } else if (refs.saved.dataset.state !== 'dirty') {
+        // Pending edits do not invalidate the draft that was already saved.
+        if (data.savedAt) showSavedTime(data.savedAt);
         refs.saved.dataset.state = 'dirty';
-        refs.saved.textContent = '未保存';
-        refs.saved.title = '输入框失去焦点后自动保存';
+        refs.saved.title = '有修改，输入框失去焦点后自动保存';
       }
     } else if (data.savedAt) showSavedTime(data.savedAt);
     else {
