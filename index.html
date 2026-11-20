@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="青柠简历：本地保存、实时预览、多页 PDF 导出" />
+    <title>青柠简历</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <span class="app-title">青柠简历</span>
+      <div class="header-actions">
+        <span id="save-state" role="status">自动保存</span>
+        <details class="settings">
+          <summary>更多</summary>
+          <div class="settings-panel">
+            <label class="setting-row" for="font-size"
+              >字号<select id="font-size">
+                <option value="12">紧凑</option>
+                <option value="13">标准</option>
+                <option value="14">宽松</option>
+              </select></label
+            >
+            <div class="settings-divider"></div>
+            <button id="export">备份</button><button id="import">恢复</button
+            ><button id="reset" class="danger">重置</button>
+          </div>
+        </details>
+        <button id="print" class="primary" title="在打印窗口选择“另存为 PDF”">导出 PDF</button>
+        <input type="file" id="file" accept=".json,application/json" hidden />
+      </div>
+    </header>
+    <main class="workspace">
+      <aside class="editor" id="editor-pane">
+        <nav id="tabs" aria-label="编辑栏目"></nav>
+        <div class="form-top">
+          <h1 id="form-title">基本信息</h1>
+          <div id="section-actions"></div>
+        </div>
+        <form id="form" autocomplete="off"></form>
+      </aside>
+      <div
+        id="splitter"
+        role="separator"
+        tabindex="0"
+        aria-label="调整编辑区和预览区宽度"
+        aria-orientation="vertical"
+        aria-controls="editor-pane preview-pane"
+        aria-valuemin="20"
+        aria-valuemax="80"
+        aria-valuenow="50"
+        title="拖动调整宽度，双击恢复各半"
+      ></div>
+      <section id="preview-pane" class="preview" aria-label="简历实时预览">
+        <div class="preview-toolbar"><span>预览</span><span id="page-count">1 页</span></div>
+        <div id="preview-scroll"><div id="pages"></div></div>
+      </section>
+    </main>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script src="defaults.js" defer></script>
+    <script src="data.js" defer></script>
+    <script src="dom.js" defer></script>
+    <script src="preview.js" defer></script>
+    <script src="split-pane.js" defer></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>
