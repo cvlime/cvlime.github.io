@@ -334,7 +334,6 @@ test('relative assets also work under a GitHub Pages project subpath', async (t)
     'defaults.js',
     'data.js',
     'dom.js',
-    'history.js',
     'preview.js',
     'split-pane.js',
     'app.js',
@@ -361,41 +360,37 @@ test('relative assets also work under a GitHub Pages project subpath', async (t)
   await noOverflow(page);
 });
 
-test('typing previews immediately, blur commits one edit and undo/redo survive reload', async (t) => {
+test('blur saves text and advances the visible latest-save timestamp', async (t) => {
   const page = await open(t);
+  assert.equal(await page.getByRole('button', { name: '撤销', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: '重做', exact: true }).count(), 0);
   const name = page.getByLabel('姓名', { exact: true });
-  const original = await name.inputValue();
-  await name.fill('第一段');
-  await name.fill('最终输入');
+  await page.clock.setFixedTime(new Date('2026-11-20T08:00:00Z'));
+  await name.fill('第一次保存');
   assert.equal(await page.evaluate(() => localStorage.getItem('resume-studio-v1')), null);
   assert.equal(await page.locator('#save-state').textContent(), '未保存');
   await page.waitForFunction(
-    () => document.querySelector('.resume-header h1').textContent === '最终输入',
+    () => document.querySelector('.resume-header h1').textContent === '第一次保存',
   );
   await name.blur();
-  let stored = await page.evaluate(() => JSON.parse(localStorage.getItem('resume-studio-v1')));
-  assert.equal(stored.name, '最终输入');
-  assert.equal(stored.history.past.length, 1);
-  const savedAt = stored.savedAt;
-  await name.focus();
-  await name.blur();
+  assert.equal(await page.locator('#save-state').textContent(), '已保存 2026-11-20 16:00:00');
+  await page.clock.setFixedTime(new Date('2026-11-20T08:01:02Z'));
+  await name.fill('第二次保存');
   assert.equal(
-    await page.evaluate(() => JSON.parse(localStorage.getItem('resume-studio-v1')).savedAt),
-    savedAt,
+    await page.evaluate(() => JSON.parse(localStorage.getItem('resume-studio-v1')).name),
+    '第一次保存',
   );
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
-  assert.equal(await name.inputValue(), original);
+  await page.locator('.app-title').click();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('resume-studio-v1')));
+  assert.equal(saved.name, '第二次保存');
+  assert.equal(saved.savedAt, '2026-11-20T08:01:02.000Z');
+  assert.equal(await page.locator('#save-state').textContent(), '已保存 2026-11-20 16:01:02');
   await page.reload();
-  assert.equal(await name.inputValue(), original);
-  assert.equal(await page.getByRole('button', { name: '重做', exact: true }).isEnabled(), true);
-  await page.getByRole('button', { name: '重做', exact: true }).click();
-  assert.equal(await name.inputValue(), '最终输入');
-  await page.reload();
-  assert.equal(await name.inputValue(), '最终输入');
-  assert.equal(await page.getByRole('button', { name: '撤销', exact: true }).isEnabled(), true);
+  assert.equal(await name.inputValue(), '第二次保存');
+  assert.equal(await page.locator('#save-state').textContent(), '已保存 2026-11-20 16:01:02');
 });
 
-test('native text undo remains native; global shortcuts apply outside inputs', async (t) => {
+test('browser-native text undo remains available without application history', async (t) => {
   const page = await open(t);
   const name = page.getByLabel('姓名', { exact: true });
   const original = await name.inputValue();
@@ -406,45 +401,39 @@ test('native text undo remains native; global shortcuts apply outside inputs', a
   await name.press(`${mod}+z`);
   assert.equal(await name.inputValue(), original);
   assert.equal(await page.evaluate(() => localStorage.getItem('resume-studio-v1')), null);
-  await name.fill('可以全局撤销');
   await name.blur();
-  await page.keyboard.press(`${mod}+z`);
-  assert.equal(await name.inputValue(), original);
-  await page.keyboard.press(`${mod}+Shift+z`);
-  assert.equal(await name.inputValue(), '可以全局撤销');
+  assert.equal(await page.evaluate(() => localStorage.getItem('resume-studio-v1')), null);
 });
 
-test('deleted custom content and visibility can be undone and redone', async (t) => {
+test('old history metadata is ignored without losing the resume; next save drops it', async (t) => {
   const page = await open(t);
-  await page.getByRole('button', { name: '添加自定义栏目', exact: true }).click();
-  await page.getByLabel('栏目名称', { exact: true }).fill('可回退的栏目');
-  await page.getByLabel('内容', { exact: true }).fill('删除后也要完整恢复');
-  page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: '删除当前自定义栏目', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: '可回退的栏目', exact: true }).count(), 0);
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
-  assert.equal(await page.locator('#form-title').textContent(), '可回退的栏目');
-  assert.equal(await page.getByLabel('内容', { exact: true }).inputValue(), '删除后也要完整恢复');
-  await page.getByRole('button', { name: '重做', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: '可回退的栏目', exact: true }).count(), 0);
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
-  await page.getByRole('switch').uncheck();
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
-  assert.equal(await page.getByRole('switch').isChecked(), true);
-  await page.getByRole('button', { name: '重做', exact: true }).click();
-  assert.equal(await page.getByRole('switch').isChecked(), false);
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'resume-studio-v1',
+      JSON.stringify({
+        ...DEFAULT_RESUME,
+        name: '已有草稿',
+        history: { version: 1, past: [], future: [] },
+      }),
+    ),
+  );
+  await page.reload();
+  const name = page.getByLabel('姓名', { exact: true });
+  assert.equal(await name.inputValue(), '已有草稿');
+  await name.fill('保存新内容');
+  await name.blur();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('resume-studio-v1')));
+  assert.equal(saved.name, '保存新内容');
+  assert.equal(Object.hasOwn(saved, 'history'), false);
 });
 
-test('reloading while still focused saves the pending text and its undo history', async (t) => {
+test('reloading with a focused edit still attempts to persist pending input', async (t) => {
   const page = await open(t);
   const name = page.getByLabel('姓名', { exact: true });
-  const original = await name.inputValue();
   await name.fill('刷新前未失焦');
   assert.equal(await page.evaluate(() => localStorage.getItem('resume-studio-v1')), null);
   await page.reload();
   assert.equal(await name.inputValue(), '刷新前未失焦');
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
-  assert.equal(await name.inputValue(), original);
 });
 
 test('More remains open within the menu and closes on focusout, outside clicks and Escape', async (t) => {
@@ -466,25 +455,4 @@ test('More remains open within the menu and closes on focusout, outside clicks a
   await page.keyboard.press('Escape');
   assert.equal(await isOpen(), false);
   assert.equal(await summary.evaluate((node) => node === document.activeElement), true);
-});
-
-test('limited storage prunes distant undo records but preserves the current resume', async (t) => {
-  const page = await open(t, () => {
-    const original = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
-      if (key === 'resume-studio-v1' && JSON.parse(value).history?.past.length > 2)
-        throw new DOMException('quota', 'QuotaExceededError');
-      return original.call(this, key, value);
-    };
-  });
-  const name = page.getByLabel('姓名', { exact: true });
-  for (const text of ['A', 'B', 'C', 'D']) {
-    await name.fill(text);
-    await name.blur();
-  }
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('resume-studio-v1')));
-  assert.equal(stored.name, 'D');
-  assert.equal(stored.history.past.length, 2);
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
-  assert.equal(await name.inputValue(), 'C');
 });
