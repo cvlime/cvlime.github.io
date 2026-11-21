@@ -4,10 +4,11 @@
   "private": true,
   "description": "青柠简历：无运行时依赖的静态简历生成器",
   "scripts": {
-    "test": "node --test tests/data.test.cjs",
+    "test": "node --test tests/data.test.cjs tests/assets.test.cjs",
     "test:browser": "node --test tests/browser.test.cjs",
-    "format": "prettier --write index.html styles.css *.js tests/*.cjs README.md package.json",
-    "format:check": "prettier --check index.html styles.css *.js tests/*.cjs README.md package.json"
+    "format": "prettier --write index.html styles.css *.js tools/*.cjs tests/*.cjs README.md package.json",
+    "format:check": "prettier --check index.html styles.css *.js tools/*.cjs tests/*.cjs README.md package.json",
+    "icons": "node tools/make-favicon.cjs"
   },
   "devDependencies": {
     "playwright": "1.65.1",
