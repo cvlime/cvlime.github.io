@@ -33,6 +33,7 @@
   let toastTimer;
   let previewFrame = 0;
   let importRequest = 0;
+  let pressing = false;
   const appTitle = document.title;
 
   const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
@@ -534,14 +535,24 @@
       return;
     }
     // Native pointer focus moves can briefly leave activeElement on <body>.
-    // Wait until the focus transition finishes before closing the menu.
+    // Wait until the focus transition finishes before closing the menu, but never
+    // while a press is still in flight: Safari does not focus buttons on mousedown,
+    // so closing here removes the panel before its click event is dispatched.
     requestAnimationFrame(() => {
+      if (pressing) return;
       if (!refs.settings.contains(document.activeElement)) refs.settings.open = false;
     });
   });
-  document.addEventListener('pointerdown', (event) => {
-    if (!refs.settings.contains(event.target)) refs.settings.open = false;
-  });
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      pressing = true;
+      if (!refs.settings.contains(event.target)) refs.settings.open = false;
+    },
+    true,
+  );
+  document.addEventListener('pointerup', () => (pressing = false), true);
+  document.addEventListener('pointercancel', () => (pressing = false), true);
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && refs.settings.open) {
       event.preventDefault();
