@@ -46,6 +46,12 @@ async function restore(page, data) {
     return saved && JSON.parse(saved).name === name;
   }, data.name);
   await page.waitForFunction(() => document.querySelector('#toast').textContent === '已恢复简历');
+  // Preview rendering is deferred to the next animation frame, so wait for the
+  // restored resume to reach the page before a test inspects pagination.
+  await page.waitForFunction(
+    (name) => document.querySelector('#pages').textContent.includes(name),
+    data.name,
+  );
 }
 async function headings(page) {
   return page.locator('.resume-section').allTextContents();
